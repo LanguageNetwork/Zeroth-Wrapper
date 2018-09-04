@@ -1,5 +1,3 @@
-'use strict';
-
 const pjson = require('./package.json');
 const log4js = require('log4js');
 

@@ -1,20 +1,26 @@
+require('dotenv').config();
 const Logger = require('./Logger');
 const log = Logger.getLogger('Main');
-require('dotenv').config();
 const express = require('express');
 const morgan = require('morgan');
 const WebSocketClient = require('websocket').client;
 const fileUpload = require('express-fileupload');
-
+const {apiMarketRequestValidator} = require('@apimarket/apimarket-server');
 const client = new WebSocketClient({closeTimeout: 10});
 const app = express();
-
-app.use(morgan('combined', {stream: {write: function(str) {log.info(str)}}}));
-app.use(express.json());
-app.use(express.urlencoded({extended: false}));
-app.use(fileUpload({abortOnLimit: true, limits: {fileSize: 500 * 1024}})); // limit 500kb
+const PORT = process.env.PORT || 3000;
 
 Logger.init();
+
+app.use(apiMarketRequestValidator());
+app.use(fileUpload({abortOnLimit: true, limits: {fileSize: 500 * 1024}})); // limit 500kb
+app.use(morgan('combined', {
+  stream: {
+    write: function (str) {
+      log.info(str)
+    }
+  }
+}));
 
 client.on('connectFailed', error => {
   log.error(error);
@@ -24,8 +30,7 @@ client.on('connectFailed', error => {
 const sendFile = (data, connection) => {
   return new Promise((resolve, reject) => {
     connection.sendBytes(data, (res, error) => {
-
-      if(error) {
+      if (error) {
         reject(error);
       }
 
@@ -39,32 +44,42 @@ app.get('/health', (req, res) => {
   return res.send('UP');
 });
 
-app.post('/korean', (req, res) => {
-  if (!req.files) {
+app.post('/speech-to-text', (req, res) => {
+  const files = req.files;
+
+  if (!files) {
     return res.status(400).send('No files were uploaded.');
   }
 
-  if (!req.files.sampleFile.mimetype.startsWith('audio')) {
-    return res.status(413).send('Only audio files allowed.');
+  if (Object.keys(files).length !== 1) {
+    return res.status(400).send('Too many files were uploaded. Limit: 1');
   }
 
-  client.connect(`${process.env.WS_ENDPOINT}`);
+  const key = Object.keys(files)[0];
+  const file = files[key];
+
+  if (!file['mimetype'].startsWith('audio')) {
+    return res.status(415).send(file.mimetype + '. Only audio files allowed.');
+  }
+
+  if (key === 'korean') {
+    client.connect(process.env.WS_ENDPOINT_KOR)
+  } else {
+    client.connect(process.env.WS_ENDPOINT_ENG);
+  }
 
   client.on('connect', async connection => {
     log.info('Opened websocket connection');
-
     let transcription = '';
 
-    sendFile(req.files.sampleFile.data, connection)
-      .then(() => {
-        connection.sendUTF('EOS', () => log.info('Sent EOS'));
-      });
+    sendFile(file['data'], connection)
+      .then(() => connection.sendUTF('EOS', () => log.info('Sent EOS')))
+      .catch(error => log.error(error));
 
     connection.on('message', data => {
       log.info('onMessage', data);
-
-      const jsonData = JSON.parse(data.utf8Data);
-      transcription = jsonData.transcript;
+      const json = JSON.parse(data['utf8Data']);
+      transcription = json['transcript'];
     });
 
     connection.on('close', (code, reason) => {
@@ -74,4 +89,4 @@ app.post('/korean', (req, res) => {
   });
 });
 
-// module.exports = app;
+app.listen(PORT, () => log.info(`Server listening on port: ${PORT}`));
