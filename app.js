@@ -70,7 +70,7 @@ app.post('/speech-to-text', (req, res) => {
 
   client.on('connect', async connection => {
     log.info('Opened websocket connection');
-    let transcription = '';
+    let result = '';
 
     sendFile(file['data'], connection)
       .then(() => connection.sendUTF('EOS', () => log.info('Sent EOS')))
@@ -79,12 +79,12 @@ app.post('/speech-to-text', (req, res) => {
     connection.on('message', data => {
       log.info('onMessage', data);
       const json = JSON.parse(data['utf8Data']);
-      transcription = json['transcript'];
+      result = json['transcript'];
     });
 
     connection.on('close', (code, reason) => {
       log.info('Connection closed', code, reason);
-      res.send(transcription);
+      res.send(result);
     });
   });
 });
