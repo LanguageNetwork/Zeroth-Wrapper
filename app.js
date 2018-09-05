@@ -1,17 +1,27 @@
+// imports
 require('dotenv').config();
 const Logger = require('./Logger');
 const log = Logger.getLogger('Main');
 const express = require('express');
 const morgan = require('morgan');
 const WebSocketClient = require('websocket').client;
+const axios = require('axios');
 const fileUpload = require('express-fileupload');
 const {apiMarketRequestValidator} = require('@apimarket/apimarket-server');
 const client = new WebSocketClient({closeTimeout: 10});
 const app = express();
+const pjson = require('./package.json');
+
+// fields
 const PORT = process.env.PORT || 3000;
+const CREDENTIALS = process.env.OPEN_ID_CREDENTIALS;
+const OPENID_ENDPOINT = process.env.OPEN_ID_ENDPOINT;
+const WS_ENDPOINT_KOR = process.env.WS_ENDPOINT_KOR;
+const WS_ENDPOINT_ENG = process.env.WS_ENDPOINT_ENG;
+let accessToken = {access_token: '', expiration: new Date()};
 
+// init
 Logger.init();
-
 app.use(apiMarketRequestValidator());
 app.use(fileUpload({abortOnLimit: true, limits: {fileSize: 500 * 1024}})); // limit 500kb
 app.use(morgan('combined', {
@@ -21,11 +31,6 @@ app.use(morgan('combined', {
     }
   }
 }));
-
-client.on('connectFailed', error => {
-  log.error(error);
-});
-
 
 const sendFile = (data, connection) => {
   return new Promise((resolve, reject) => {
@@ -37,6 +42,30 @@ const sendFile = (data, connection) => {
       log.info('Sent audio');
       resolve();
     });
+  });
+};
+
+const obtainToken = () => {
+  return new Promise((resolve, reject) => {
+    if (accessToken.expiration <= new Date(new Date().getTime() + 5 * 1000)) {
+      const b64 = Buffer.from(CREDENTIALS).toString('base64');
+      axios.post(OPENID_ENDPOINT,
+        'grant_type=client_credentials',
+        {headers: {Authorization: "Basic " + b64, MediaType: 'application/x-www-form-urlencoded'}})
+        .then(response => {
+          const data = response['data'];
+          accessToken = {
+            access_token: data['access_token'],
+            expiration: new Date(new Date().getTime() + data['expires_in'] * 1000)
+          };
+          resolve();
+        })
+        .catch(error => {
+          reject(error);
+        })
+    } else {
+      resolve();
+    }
   });
 };
 
@@ -62,13 +91,25 @@ app.post('/speech-to-text', (req, res) => {
     return res.status(415).send(file.mimetype + '. Only audio files allowed.');
   }
 
-  if (key === 'korean') {
-    client.connect(process.env.WS_ENDPOINT_KOR)
-  } else {
-    client.connect(process.env.WS_ENDPOINT_ENG);
-  }
+  obtainToken()
+    .then(() => {
+      if (key === 'korean') {
+        client.connect(WS_ENDPOINT_KOR + accessToken['access_token']);
+      } else {
+        client.connect(WS_ENDPOINT_ENG + accessToken['access_token']);
+      }
+    })
+    .catch(error => {
+      log.error(error);
+      res.status(503).send('Service temporarily unavailable.');
+    });
 
-  client.on('connect', async connection => {
+  client.on('connectFailed', error => {
+    log.error(error.toString().split('\n')[0]);
+    res.status(503).send('Service temporarily unavailable.');
+  });
+
+  client.on('connect', connection => {
     log.info('Opened websocket connection');
     let result = '';
 
@@ -79,7 +120,9 @@ app.post('/speech-to-text', (req, res) => {
     connection.on('message', data => {
       log.info('onMessage', data);
       const json = JSON.parse(data['utf8Data']);
-      result = json['transcript'];
+      if(json.hasOwnProperty('transcript')) {
+        result = json['transcript'];
+      }
     });
 
     connection.on('close', (code, reason) => {
@@ -89,4 +132,5 @@ app.post('/speech-to-text', (req, res) => {
   });
 });
 
+log.info('Starting ' + pjson.name + '-' + pjson.version);
 app.listen(PORT, () => log.info(`Server listening on port: ${PORT}`));
