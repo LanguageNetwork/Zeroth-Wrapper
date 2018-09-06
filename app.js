@@ -111,7 +111,7 @@ app.post('/speech-to-text', (req, res) => {
 
   client.on('connect', connection => {
     log.info('Opened websocket connection');
-    let result = '';
+    let result = {};
 
     sendFile(file['data'], connection)
       .then(() => connection.sendUTF('EOS', () => log.info('Sent EOS')))
@@ -121,13 +121,13 @@ app.post('/speech-to-text', (req, res) => {
       log.info('onMessage', data);
       const json = JSON.parse(data['utf8Data']);
       if(json.hasOwnProperty('transcript')) {
-        result = json['transcript'];
+        result = {transcript: json['transcript']};
       }
     });
 
     connection.on('close', (code, reason) => {
       log.info('Connection closed', code, reason);
-      res.send(result);
+      res.send(JSON.stringify(result));
     });
   });
 });
