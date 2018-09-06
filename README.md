@@ -11,8 +11,12 @@ short time segments. A time delay neural network (TDNN) maps this audio informat
 or phones. A recurrent language model (RNN-LM), trained on millions of lines of text, then predicts the most probable 
 sequence of words that the phone sequence represents.
 
-## How to use
-...
+## Endpoint
 
+Accepts a single file with mimetype `audio/*` and a size up to 500kb and returns the transcribed text as json. 
 
+Url: `/speech-to-text`
 
+Method: `POST`
+
+Returns: `200` with payload `{"transcript":"WELCOME TO THE LANGUAGE NETWORK."}`
