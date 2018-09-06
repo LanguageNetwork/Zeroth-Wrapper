@@ -69,10 +69,6 @@ const obtainToken = () => {
   });
 };
 
-app.get('/health', (req, res) => {
-  return res.send('UP');
-});
-
 app.post('/speech-to-text', (req, res) => {
   const files = req.files;
 
