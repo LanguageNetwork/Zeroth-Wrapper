@@ -8,9 +8,10 @@ const WebSocketClient = require('websocket').client;
 const axios = require('axios');
 const fileUpload = require('express-fileupload');
 const {apiMarketRequestValidator} = require('@apimarket/apimarket-server');
-const client = new WebSocketClient({closeTimeout: 10});
+// let client = new WebSocketClient({closeTimeout: 10});
 const app = express();
 const pjson = require('./package.json');
+const cors = require('cors');
 
 // fields
 const PORT = process.env.PORT || 3000;
@@ -22,6 +23,7 @@ let accessToken = {access_token: '', expiration: new Date()};
 
 // init
 Logger.init();
+app.use(cors());
 app.use(apiMarketRequestValidator());
 app.use(fileUpload({abortOnLimit: true, limits: {fileSize: 500 * 1024}})); // limit 500kb
 app.use(morgan('combined', {
@@ -71,6 +73,7 @@ const obtainToken = () => {
 
 app.post('/speech-to-text', (req, res) => {
   const files = req.files;
+  const client = new WebSocketClient({closeTimeout: 10});
 
   if (!files) {
     return res.status(400).send('No files were uploaded.');
